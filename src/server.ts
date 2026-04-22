@@ -88,7 +88,7 @@ export class ChatAgent extends AIChatAgent<Env> {
         ## Tools
         You have access to tools for weather, timezone detection, scheduling, and calculations. Use them proactively when relevant — don't ask the user if you should use a tool, just use it.
         - When you receive a message containing [audio:BASE64], immediately call the transcribeAudio tool with that base64 string, then respond to the transcribed content as if the user typed it.
-        
+
         ## Scheduled tasks
         When a scheduled task fires, treat it as a priority interrupt. Announce it clearly at the top of your response.
 
@@ -116,14 +116,40 @@ export class ChatAgent extends AIChatAgent<Env> {
             city: z.string().describe("City name")
           }),
           execute: async ({ city }) => {
-            // Replace with a real weather API in production
-            const conditions = ["sunny", "cloudy", "rainy", "snowy"];
-            const temp = Math.floor(Math.random() * 30) + 5;
+            const geoRes = await fetch(
+              `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`
+            );
+            const geoData = await geoRes.json() as {
+              results?: { latitude: number; longitude: number; name: string; country: string }[]
+            };
+            if (!geoData.results?.length) {
+              return { error: `Could not find city: ${city}` };
+            }
+            const { latitude, longitude, name, country } = geoData.results[0];
+            const weatherRes = await fetch(
+              `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weathercode,windspeed_10m,relative_humidity_2m`
+            );
+            const weatherData = await weatherRes.json() as {
+              current: {
+                temperature_2m: number;
+                weathercode: number;
+                windspeed_10m: number;
+                relative_humidity_2m: number;
+              }
+            };
+            const codes: Record<number, string> = {
+              0: "clear sky", 1: "mainly clear", 2: "partly cloudy", 3: "overcast",
+              45: "foggy", 48: "icy fog", 51: "light drizzle", 53: "drizzle",
+              61: "light rain", 63: "rain", 71: "light snow", 73: "snow",
+              80: "rain showers", 81: "heavy showers", 95: "thunderstorm"
+            };
+            const c = weatherData.current;
             return {
-              city,
-              temperature: temp,
-              condition:
-                conditions[Math.floor(Math.random() * conditions.length)],
+              city: `${name}, ${country}`,
+              temperature: c.temperature_2m,
+              condition: codes[c.weathercode] ?? "unknown",
+              windspeed: c.windspeed_10m,
+              humidity: c.relative_humidity_2m,
               unit: "celsius"
             };
           }
