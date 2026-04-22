@@ -36,7 +36,9 @@ import {
   XIcon,
   WrenchIcon,
   PaperclipIcon,
-  ImageIcon
+  ImageIcon,
+  MicrophoneIcon,
+  StopCircleIcon
 } from "@phosphor-icons/react";
 
 // ── Attachment helpers ────────────────────────────────────────────────
@@ -229,6 +231,10 @@ function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isRecording, setIsRecording] = useState(false); // Recording
+  const [isTranscribing, setIsTranscribing] = useState(false); // Transcribing
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null); // MediaRecorder instance
+  const audioChunksRef = useRef<Blob[]>([]); // Recorded audio chunks in blob form
   const toasts = useKumoToastManager();
   const [mcpState, setMcpState] = useState<MCPServersState>({
     prompts: [],
@@ -428,6 +434,65 @@ function Chat() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   }, [input, attachments, isStreaming, sendMessage]);
 
+  const handleVoiceInput = useCallback(async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        
+        setIsTranscribing(true);
+        try {
+          const arrayBuffer = await blob.arrayBuffer();
+          const base64 = btoa(
+            String.fromCharCode(...new Uint8Array(arrayBuffer))
+          );
+          sendMessage({
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: `Please transcribe this audio and respond to it: [audio:${base64}]`
+              }
+            ]
+          });
+        } catch (err) {
+          console.error("Transcription error:", err);
+          toasts.add({
+            title: "Voice input failed",
+            description: "Could not process audio. Please try again.",
+            timeout: 3000
+          });
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch {
+      toasts.add({
+        title: "Microphone access denied",
+        description: "Please allow microphone access to use voice input.",
+        timeout: 4000
+      });
+    }
+  }, [isRecording, sendMessage, toasts]);
+
   return (
     <div
       className="flex flex-col h-screen bg-kumo-elevated relative"
@@ -449,7 +514,7 @@ function Chat() {
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold text-kumo-default">
-              <span className="mr-2">⛅</span>Agent Starter
+              <span className="mr-2">📡</span>Herald
             </h1>
             <Badge variant="secondary">
               <ChatCircleDotsIcon size={12} weight="bold" className="mr-1" />
@@ -663,10 +728,10 @@ function Chat() {
               contents={
                 <div className="flex flex-wrap justify-center gap-2">
                   {[
-                    "What's the weather in Paris?",
-                    "What timezone am I in?",
-                    "Calculate 5000 * 3",
-                    "Remind me in 5 minutes to take a break"
+                    "Brief me",
+                    "What's the weather in London?",
+                    "Remind me in 10 minutes to check my email",
+                    "What timezone am I in?"
                   ].map((prompt) => (
                     <Button
                       key={prompt}
@@ -873,6 +938,24 @@ function Chat() {
               disabled={!connected || isStreaming}
               className="mb-0.5"
             />
+            <Button
+              type="button"
+              variant="ghost"
+              shape="square"
+              aria-label={isRecording ? "Stop recording" : "Voice input"}
+              icon={
+                isTranscribing ? (
+                  <GearIcon size={18} className="animate-spin" />
+                ) : isRecording ? (
+                  <StopCircleIcon size={18} className="text-kumo-danger" />
+                ) : (
+                  <MicrophoneIcon size={18} />
+                )
+              }
+              onClick={handleVoiceInput}
+              disabled={!connected || isStreaming || isTranscribing}
+              className="mb-0.5"
+            />
             <InputArea
               ref={textareaRef}
               value={input}
@@ -943,3 +1026,4 @@ export default function App() {
     </Toasty>
   );
 }
+

@@ -70,14 +70,36 @@ export class ChatAgent extends AIChatAgent<Env> {
     const workersai = createWorkersAI({ binding: this.env.AI });
 
     const result = streamText({
-      model: workersai("@cf/moonshotai/kimi-k2.5", {
+      model: workersai("@cf/meta/llama-3.3-70b-instruct-fp8-fast", {
         sessionAffinity: this.sessionAffinity
       }),
-      system: `You are a helpful assistant that can understand images. You can check the weather, get the user's timezone, run calculations, and schedule tasks. When users share images, describe what you see and answer questions about them.
+      system: `You are Herald, an AI briefing assistant built on Cloudflare.
 
-${getSchedulePrompt({ date: new Date() })}
+        Your job is to brief the user on what matters — concisely, clearly, and in order of importance. You think like a chief of staff: you filter noise, surface signal, and always lead with the most actionable information.
 
-If the user asks to schedule a task, use the schedule tool to schedule the task.`,
+        ## Behaviour
+        - Lead with the most important thing first. Never bury the lede.
+        - Be brief by default. Expand only when asked.
+        - Use structured output (short bullet points or numbered lists) for multi-item briefs.
+        - When the user asks to be "briefed", pull together everything available — weather, tasks, schedule, news — into a single morning-brief style summary.
+        - Speak in a calm, confident, direct tone. No filler phrases like "Certainly!" or "Great question!".
+        - Never repeat the user's question back to them.
+
+        ## Tools
+        You have access to tools for weather, timezone detection, scheduling, and calculations. Use them proactively when relevant — don't ask the user if you should use a tool, just use it.
+        - When you receive a message containing [audio:BASE64], immediately call the transcribeAudio tool with that base64 string, then respond to the transcribed content as if the user typed it.
+        
+        ## Scheduled tasks
+        When a scheduled task fires, treat it as a priority interrupt. Announce it clearly at the top of your response.
+
+        ## Identity
+        - Your name is Herald.
+        - You were built by Moulishwaran Balaji on Cloudflare Workers AI.
+        - If asked about your stack: you run on Cloudflare Workers, use Llama 3.3, and persist state with Durable Objects.
+
+        ${getSchedulePrompt({ date: new Date() })}
+
+        If the user asks to schedule a task, use the schedule tool to schedule the task.`,
       // Prune old tool calls to save tokens on long conversations
       messages: pruneMessages({
         messages: inlineDataUrls(await convertToModelMessages(this.messages)),
@@ -195,7 +217,21 @@ If the user asks to schedule a task, use the schedule tool to schedule the task.
               return `Error cancelling task: ${error}`;
             }
           }
-        })
+          
+        }),
+        transcribeAudio: tool({
+            description: "Transcribe audio to text using Whisper",
+            inputSchema: z.object({
+              audio: z.string().describe("Base64 encoded audio")
+            }),
+            execute: async ({ audio }) => {
+              const bytes = Uint8Array.from(atob(audio), c => c.charCodeAt(0));
+              const result = await this.env.AI.run("@cf/openai/whisper-tiny-en", {
+                audio: [...bytes]
+              });
+              return { transcript: result.text };
+            }
+          }),
       },
       stopWhen: stepCountIs(5),
       abortSignal: options?.abortSignal
