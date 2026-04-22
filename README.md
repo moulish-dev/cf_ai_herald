@@ -1,5 +1,5 @@
 
-```markdown
+
 # cf_ai_herald
 
 > A voice-enabled AI briefing agent built on Cloudflare. Herald briefs you on what matters — weather, schedule, tasks — concisely and in order of importance.
@@ -69,11 +69,7 @@ PROMPTS.md     # AI prompts used during development
 - [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) — Llama 3.3 + Whisper
 - [Cloudflare Agents SDK](https://developers.cloudflare.com/agents/) — Durable Objects, chat, scheduling
 - [Kumo UI](https://developers.cloudflare.com/style-guide/) — Cloudflare design system
-- [Open-Meteo](https://open-meteo.com/) — free weather API
 
 ## Author
 
 Built by [Moulishwaran Balaji](https://github.com/moulish-dev) for the Cloudflare internship assignment.
-```
-
----
